@@ -16,14 +16,25 @@ def get_connection():
 
 
 def run_query(query, params=None, ttl="1m"):
-    """Execute a SELECT query and return a DataFrame."""
+    """
+    Execute a SELECT query and return a DataFrame.
+
+    IMPORTANT: conn.query() must receive a plain string — it hashes
+    its arguments for caching, and SQLAlchemy TextClause objects
+    are not hashable.
+    """
     conn = get_connection()
-    # Wrap in text() so SQLAlchemy 2.x accepts raw SQL
-    return conn.query(text(query), params=params, ttl=ttl)
+    # Pass the raw string; do NOT wrap in text()
+    return conn.query(query, params=params, ttl=ttl)
 
 
 def execute_write(query, params=None):
-    """Execute INSERT / UPDATE / DELETE. Returns (success, message)."""
+    """
+    Execute INSERT / UPDATE / DELETE. Returns (success, message).
+
+    IMPORTANT: session.execute() requires a TextClause in
+    SQLAlchemy 2.x, so we wrap here.
+    """
     conn = get_connection()
     try:
         with conn.session as session:
