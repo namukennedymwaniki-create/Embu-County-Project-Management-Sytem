@@ -3,6 +3,9 @@
 import streamlit as st
 from utils.db import run_query, execute_write
 
+def render():
+    st.title("📋 Project Management")
+
 st.title("📋 Project Management")
 st.caption("Add, edit, and manage county projects")
 st.markdown("---")
