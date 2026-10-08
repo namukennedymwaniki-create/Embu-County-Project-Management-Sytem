@@ -16,3 +16,9 @@ bcrypt>=4.0.0
 
 # Optional: date handling utilities
 python-dateutil>=2.8.2
+streamlit>=1.36.0
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9
+pandas>=2.0.0
+plotly>=5.18.0
+bcrypt>=4.0.0
