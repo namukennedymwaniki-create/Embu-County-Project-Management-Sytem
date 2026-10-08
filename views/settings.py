@@ -3,6 +3,9 @@
 import streamlit as st
 from utils.db import run_query, execute_write
 
+def render():
+    st.title("⚙️ Settings")
+    
 st.title("⚙️ Settings")
 st.caption("Manage reference data for the county project system")
 st.markdown("---")
