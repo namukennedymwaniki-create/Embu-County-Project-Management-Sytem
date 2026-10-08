@@ -4,6 +4,9 @@ import streamlit as st
 import bcrypt
 from utils.db import run_query, execute_write
 
+def render():
+    st.title("👥 User Management")
+    
 st.title("👥 User Management")
 st.caption("Manage system users and role-based access")
 st.markdown("---")
