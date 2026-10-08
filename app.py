@@ -1,15 +1,6 @@
 """
 Embu County Project Management System
-Main entry point — professional sidebar + module router.
-
-Structure:
-    app.py                    → this file (router + sidebar)
-    views/dashboard.py        → Dashboard view (render())
-    views/projects.py         → Projects view (render())
-    views/settings.py         → Settings view (render())
-    views/users.py            → Users view (render())
-    utils/db.py               → DB helpers
-    assets/embu_logo.png      → County logo
+Main entry — login gate + professional sidebar + module router.
 """
 
 import streamlit as st
@@ -17,7 +8,7 @@ import base64
 from pathlib import Path
 
 # =====================================================
-# PAGE CONFIG (must be the first Streamlit call)
+# PAGE CONFIG (must be first Streamlit call)
 # =====================================================
 st.set_page_config(
     page_title="Embu County PMS",
@@ -27,11 +18,18 @@ st.set_page_config(
 )
 
 # =====================================================
-# GLOBAL CSS — fonts, sidebar polish, button styling
+# AUTH GATE — show login page if not authenticated
+# =====================================================
+if "user" not in st.session_state or st.session_state.user is None:
+    from views import login
+    login.render()
+    st.stop()
+
+# =====================================================
+# GLOBAL CSS (only after login)
 # =====================================================
 st.markdown("""
     <style>
-        /* ---------- Import professional font ---------- */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
         html, body, [class*="css"] {
@@ -39,16 +37,12 @@ st.markdown("""
                          'Segoe UI', Roboto, sans-serif;
         }
 
-        /* ---------- Hide Streamlit's default multipage nav ---------- */
         [data-testid="stSidebarNav"] { display: none; }
         [data-testid="stSidebarNavItems"] { display: none; }
 
-        /* ---------- Sidebar container polish ---------- */
         section[data-testid="stSidebar"] {
             background: linear-gradient(180deg,
-                        #0b1220 0%,
-                        #111827 60%,
-                        #0f172a 100%);
+                        #0b1220 0%, #111827 60%, #0f172a 100%);
             border-right: 1px solid rgba(255,255,255,0.05);
         }
         section[data-testid="stSidebar"] > div:first-child {
@@ -57,7 +51,6 @@ st.markdown("""
             padding-right: 1rem;
         }
 
-        /* ---------- Sidebar nav buttons ---------- */
         section[data-testid="stSidebar"] .stButton > button {
             width: 100%;
             text-align: left;
@@ -79,10 +72,8 @@ st.markdown("""
             color: #ffffff;
         }
         section[data-testid="stSidebar"] .stButton > button:focus {
-            outline: none;
-            box-shadow: none;
+            outline: none; box-shadow: none;
         }
-        /* ---------- Active page button (primary) ---------- */
         section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
             background: linear-gradient(135deg,
                         rgba(234,179,8,0.18) 0%,
@@ -93,13 +84,11 @@ st.markdown("""
             box-shadow: inset 3px 0 0 0 #eab308;
         }
 
-        /* ---------- Sidebar divider ---------- */
         section[data-testid="stSidebar"] hr {
             margin: 12px 0;
             border-color: rgba(255,255,255,0.06);
         }
 
-        /* ---------- Section label ---------- */
         .sidebar-section-label {
             font-size: 10px;
             font-weight: 700;
@@ -109,7 +98,6 @@ st.markdown("""
             margin: 16px 4px 8px;
         }
 
-        /* ---------- Account footer card ---------- */
         .sidebar-footer {
             margin-top: 12px;
             padding: 14px 14px;
@@ -132,14 +120,13 @@ st.markdown("""
             margin-left: 4px;
         }
 
-        /* ---------- Main area typography polish ---------- */
         h1, h2, h3 { letter-spacing: -0.3px; }
         .block-container { padding-top: 2rem; }
     </style>
 """, unsafe_allow_html=True)
 
 # =====================================================
-# LOAD LOGO AS BASE64 (reliable, no external URL)
+# LOAD LOGO
 # =====================================================
 logo_b64 = ""
 logo_path = Path("assets/embu_logo.png")
@@ -176,8 +163,7 @@ with st.sidebar:
                     margin: 0 auto 14px auto;
                     box-shadow: 0 6px 20px rgba(234,179,8,0.35),
                                 inset 0 0 0 3px rgba(234,179,8,0.35);
-                    overflow: hidden;
-                    padding: 6px;
+                    overflow: hidden; padding: 6px;
                 ">
                     <img src="data:image/png;base64,{logo_b64}"
                          style="width:100%; height:100%; object-fit:contain;" />
@@ -221,24 +207,32 @@ with st.sidebar:
             </div>
         """, unsafe_allow_html=True)
 
-    # ---------- MODULES LABEL ----------
+    # ---------- MODULES ----------
     st.markdown(
         '<div class="sidebar-section-label">Modules</div>',
         unsafe_allow_html=True,
     )
 
-    # ---------- NAVIGATION BUTTONS ----------
+    # Role-based page visibility
+    user_role = (st.session_state.user or {}).get("role", "viewer")
+
     PAGES = {
-        "Dashboard": "🏠",
-        "Projects":  "📋",
-        "Settings":  "⚙️",
-        "Users":     "👥",
+        "Dashboard": ("🏠", ["viewer", "editor", "admin"]),
+        "Projects":  ("📋", ["viewer", "editor", "admin"]),
+        "Settings":  ("⚙️", ["admin"]),
+        "Users":     ("👥", ["admin"]),
     }
 
     if "current_page" not in st.session_state:
         st.session_state.current_page = "Dashboard"
 
-    for page_name, icon in PAGES.items():
+    # If current page isn't allowed for this role, fall back to Dashboard
+    if user_role not in PAGES.get(st.session_state.current_page, ("", []))[1]:
+        st.session_state.current_page = "Dashboard"
+
+    for page_name, (icon, allowed_roles) in PAGES.items():
+        if user_role not in allowed_roles:
+            continue
         is_active = st.session_state.current_page == page_name
         if st.button(
             f"{icon}   {page_name}",
@@ -255,11 +249,11 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    user = st.session_state.get("user")
+    user = st.session_state.user
     if user:
-        initial = (user.get("username", "?") or "?")[0].upper()
+        display_name = user.get("full_name") or user.get("username", "User")
+        initial = display_name[0].upper() if display_name else "?"
         role = (user.get("role") or "viewer").title()
-        username = user.get("username", "User")
 
         st.markdown(f"""
             <div class="sidebar-footer">
@@ -278,7 +272,7 @@ with st.sidebar:
                         <div style="color:#e2e8f0; font-weight:600;
                                     font-size:12px; white-space:nowrap;
                                     overflow:hidden; text-overflow:ellipsis;">
-                            {username}
+                            {display_name}
                         </div>
                         <div style="font-size:10px; color:#94a3b8;">
                             {role} <span class="badge">●</span>
@@ -294,17 +288,9 @@ with st.sidebar:
             st.session_state.user = None
             st.session_state.current_page = "Dashboard"
             st.rerun()
-    else:
-        st.markdown("""
-            <div class="sidebar-footer">
-                <div style="text-align:center; color:#94a3b8;">
-                    Not signed in
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
 
 # =====================================================
-# ROUTER — render the selected page
+# ROUTER
 # =====================================================
 page = st.session_state.current_page
 
