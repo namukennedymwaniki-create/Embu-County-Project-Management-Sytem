@@ -6,6 +6,25 @@ Displays project KPIs, filters, and subcounty/ward breakdowns.
 import streamlit as st
 from utils.db import run_query
 
+def render():
+    st.title("🏗️ Project Implementation Dashboard")
+    st.caption("Embu County Government — Land of Opportunities")
+    st.markdown("---")
+
+    try:
+        projects = run_query("""
+            SELECT
+                p.id, p.project_name, p.contract_sum, p.project_status, p.remarks,
+                s.name AS subcounty, w.name AS ward, d.name AS department
+            FROM projects p
+            LEFT JOIN subcounties s ON p.subcounty_id = s.id
+            LEFT JOIN wards w ON p.ward_id = w.id
+            LEFT JOIN departments d ON p.department_id = d.id
+            ORDER BY p.id DESC
+        """)
+    except Exception as e:
+        st.error(f"⚠️ Could not load projects: {e}")
+        return
 # =====================================================
 # HEADER
 # =====================================================
