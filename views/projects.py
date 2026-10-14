@@ -1,7 +1,7 @@
 """
 Projects view — Embu County Project Management System.
 Professional filter bar, project details, and multi-format import
-(Excel, Word, CSV, pasted text).
+(Excel, Word, CSV, pasted text) with full audit logging.
 """
 
 import io
@@ -13,6 +13,7 @@ import streamlit as st
 
 from utils.db import run_query, execute_write
 from utils.audit import log_create, log_update, log_delete, log_import
+
 
 # =====================================================
 # HELPERS
@@ -560,16 +561,21 @@ def _render_add_project(subcounties, wards, departments):
                     },
                 )
                 if ok:
-                    # Fetch the new record ID and log
+                    # ---- Fetch the new record ID for audit ----
                     try:
                         new_id_df = run_query(
-                            "SELECT id FROM projects WHERE project_name = :n ORDER BY id DESC LIMIT 1",
+                            "SELECT id FROM projects "
+                            "WHERE project_name = :n ORDER BY id DESC LIMIT 1",
                             {"n": project_name.strip()}, ttl=0,
                         )
-                        new_id = int(new_id_df['id'].iloc[0]) if not new_id_df.empty else None
+                        new_id = (
+                            int(new_id_df['id'].iloc[0])
+                            if not new_id_df.empty else None
+                        )
                     except Exception:
                         new_id = None
-                
+
+                    # ---- Audit log ----
                     log_create(
                         table_name="projects",
                         record_id=new_id,
@@ -588,7 +594,7 @@ def _render_add_project(subcounties, wards, departments):
                             "percentage_completion": float(percentage_completion),
                         },
                     )
-                
+
                     st.success("✅ Project saved successfully.")
                     st.cache_data.clear()
                     st.rerun()
@@ -676,7 +682,6 @@ def _render_import_projects(subcounties, wards, departments):
             hdr = table.rows[0].cells
             for i, col in enumerate(EXPECTED_COLUMNS):
                 hdr[i].text = col
-            # Add a sample row
             sample = [
                 "Sample Project Name", "Manyatta", "Kirimari", "Education",
                 "15-Jul-24", "30-Jun-25", "1500000", "1499891",
@@ -755,7 +760,6 @@ def _render_import_projects(subcounties, wards, departments):
             st.info("👆 Paste your data to preview and import.")
             return
 
-        # Detect separator
         first_line = pasted.strip().splitlines()[0]
         sep = "\t" if "\t" in first_line else ","
         try:
@@ -806,7 +810,7 @@ def _render_import_projects(subcounties, wards, departments):
     parsed_rows = []
 
     for idx, row in df.iterrows():
-        row_num = idx + 2  # +2 = header + zero-index
+        row_num = idx + 2
         row_errors = []
 
         pname = _clean_str(row.get("Project Name"))
@@ -840,7 +844,6 @@ def _render_import_projects(subcounties, wards, departments):
             if dept_id is None:
                 row_errors.append(f"Unknown Department '{dept_name}'")
 
-        # Dates
         comm_raw = row.get("Commencement Date")
         exp_raw = row.get("Expected Completion Date")
         comm = _parse_date(comm_raw)
@@ -852,7 +855,6 @@ def _render_import_projects(subcounties, wards, departments):
         if comm and exp and exp < comm:
             row_errors.append("Expected Completion before Commencement")
 
-        # Numbers
         funding = _parse_number(row.get("Total Funding"))
         expenditure = _parse_number(row.get("Total Expenditure"))
         if funding is None:
@@ -867,7 +869,6 @@ def _render_import_projects(subcounties, wards, departments):
         pct = _parse_number(row.get("Percentage Completion")) or 0
         pct = max(0.0, min(100.0, float(pct)))
 
-        # Status
         status_raw = _clean_str(row.get("Status"))
         if not status_raw:
             status = "Not Started"
@@ -982,6 +983,17 @@ def _render_import_projects(subcounties, wards, departments):
 
         progress.empty()
 
+        # ---- Audit log ----
+        if inserted or failed:
+            log_import(
+                table_name="projects",
+                record_count=inserted,
+                notes=(
+                    f"Bulk import via {input_method} — "
+                    f"{inserted} inserted, {failed} failed."
+                ),
+            )
+
         if inserted:
             st.success(f"✅ Successfully imported {inserted} project(s).")
             st.cache_data.clear()
@@ -1017,15 +1029,7 @@ def _read_uploaded_file(uploaded):
 
 
 def _read_word_document(uploaded):
-    """
-    Extract a DataFrame from a Word document.
-
-    Strategy:
-        1. If the doc contains tables, read the first non-empty table
-           (row 1 = headers).
-        2. Otherwise, parse paragraphs formatted as
-           "Column: Value" and assemble one project from them.
-    """
+    """Extract a DataFrame from a Word document (tables or key:value pairs)."""
     try:
         from docx import Document
     except ImportError:
@@ -1052,7 +1056,6 @@ def _read_word_document(uploaded):
                 data.append(values)
 
         if data:
-            # Pad rows to match header length
             n = len(headers)
             data = [(r + [""] * n)[:n] for r in data]
             return pd.DataFrame(data, columns=headers)
@@ -1065,7 +1068,6 @@ def _read_word_document(uploaded):
             "Add a table with the expected columns."
         )
 
-    # Try to detect blocks separated by blank lines (each = one project)
     blocks = re.split(r"\n\s*\n", text.strip())
     rows = []
     for block in blocks:
@@ -1189,6 +1191,18 @@ def _render_edit_form(projects_df, subcounties, wards, departments):
             elif new_commencement and new_expected and new_expected < new_commencement:
                 st.error("Expected Completion cannot be before Commencement.")
             else:
+                # ---- Snapshot old values before updating ----
+                old_snapshot = {
+                    "project_name": current['project_name'],
+                    "project_status": current['project_status'],
+                    "remarks": current['remarks'],
+                    "commencement_date": current['commencement_date'],
+                    "expected_completion_date": current['expected_completion_date'],
+                    "total_funding": current['total_funding'],
+                    "total_expenditure": current['total_expenditure'],
+                    "percentage_completion": current['percentage_completion'],
+                }
+
                 ok, msg = execute_write(
                     """
                     UPDATE projects
@@ -1222,6 +1236,26 @@ def _render_edit_form(projects_df, subcounties, wards, departments):
                     },
                 )
                 if ok:
+                    # ---- Audit log ----
+                    new_snapshot = {
+                        "project_name": new_name.strip(),
+                        "project_status": new_status,
+                        "remarks": new_remarks.strip() or None,
+                        "commencement_date": new_commencement,
+                        "expected_completion_date": new_expected,
+                        "total_funding": new_funding,
+                        "total_expenditure": new_expenditure,
+                        "percentage_completion": float(new_pct),
+                    }
+
+                    log_update(
+                        table_name="projects",
+                        record_id=edit_id,
+                        record_label=new_name.strip(),
+                        old_values=old_snapshot,
+                        new_values=new_snapshot,
+                    )
+
                     st.success(f"✅ Project #{edit_id} updated.")
                     st.cache_data.clear()
                     st.rerun()
@@ -1246,8 +1280,11 @@ def _render_delete_form(projects_df):
         key="delete_confirm",
     )
 
-    if st.button("Delete Project", type="primary", disabled=not confirm, use_container_width=True):
-        # Fetch the record before deleting
+    if st.button(
+        "Delete Project", type="primary",
+        disabled=not confirm, use_container_width=True,
+    ):
+        # ---- Snapshot the record before deleting ----
         try:
             before_df = run_query(
                 """
@@ -1259,20 +1296,28 @@ def _render_delete_form(projects_df):
                 """,
                 {"id": del_id}, ttl=0,
             )
-            old_snapshot = before_df.iloc[0].to_dict() if not before_df.empty else None
-            record_label = old_snapshot.get("project_name") if old_snapshot else None
+            old_snapshot = (
+                before_df.iloc[0].to_dict() if not before_df.empty else None
+            )
+            record_label = (
+                old_snapshot.get("project_name") if old_snapshot else None
+            )
         except Exception:
             old_snapshot = None
             record_label = None
-    
-        ok, msg = execute_write("DELETE FROM projects WHERE id = :id", {"id": del_id})
+
+        ok, msg = execute_write(
+            "DELETE FROM projects WHERE id = :id", {"id": del_id}
+        )
         if ok:
+            # ---- Audit log ----
             log_delete(
                 table_name="projects",
                 record_id=del_id,
                 record_label=record_label,
                 old_values=old_snapshot,
             )
+
             st.success(f"✅ Project #{del_id} deleted.")
             st.cache_data.clear()
             st.rerun()
