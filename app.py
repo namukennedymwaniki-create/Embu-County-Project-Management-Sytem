@@ -219,6 +219,7 @@ with st.sidebar:
     PAGES = {
         "Dashboard": ("🏠", ["viewer", "editor", "admin"]),
         "Projects":  ("📋", ["viewer", "editor", "admin"]),
+        "Audit":     ("🔍", ["admin"]),
         "Settings":  ("⚙️", ["admin"]),
         "Users":     ("👥", ["admin"]),
     }
@@ -305,6 +306,9 @@ try:
     elif page == "Settings":
         from views import settings
         settings.render()
+    elif page == "Audit":
+        from views import audit
+        audit.render()
     elif page == "Users":
         from views import users
         users.render()
