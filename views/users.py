@@ -6,7 +6,7 @@ Manage system users and role-based access.
 import streamlit as st
 import bcrypt
 from utils.db import run_query, execute_write
-
+from utils.audit import log_create, log_update, log_delete
 
 def render():
     st.title("👥 User Management")
@@ -88,6 +88,26 @@ def render():
                     },
                 )
                 if ok:
+                    try:
+                        new_id_df = run_query(
+                            "SELECT id FROM users WHERE username = :u ORDER BY id DESC LIMIT 1",
+                            {"u": username.strip()}, ttl=0,
+                        )
+                        new_id = int(new_id_df['id'].iloc[0]) if not new_id_df.empty else None
+                    except Exception:
+                        new_id = None
+                
+                    log_create(
+                        table_name="users",
+                        record_id=new_id,
+                        record_label=username.strip(),
+                        new_values={
+                            "username": username.strip(),
+                            "email": email.strip(),
+                            "role": role,
+                            # never log the password hash
+                        },
+                    )
                     st.success(f"✅ User '{username}' created.")
                     st.cache_data.clear()
                     st.rerun()
