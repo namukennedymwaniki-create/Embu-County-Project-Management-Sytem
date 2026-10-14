@@ -242,6 +242,8 @@ def render():
                 type="primary",
             )
 
+            from utils.audit import log_login  # add at top of file
+            
             if submitted:
                 if not username.strip() or not password:
                     st.error("Please enter both username and password.")
@@ -249,11 +251,16 @@ def render():
                     user, err = _verify_credentials(username, password)
                     if user:
                         _update_last_login(user["id"])
+                        # ⬇️ Audit: successful login
                         st.session_state.user = user
+                        log_login(username=user["username"], user_id=user["id"], success=True)
+            
                         st.session_state.current_page = "Dashboard"
                         st.success(f"Welcome back, {user.get('full_name') or user['username']}!")
                         st.rerun()
                     else:
+                        # ⬇️ Audit: failed login (log with username only)
+                        log_login(username=username.strip(), user_id=None, success=False)
                         st.error(err or "Login failed.")
 
         # ---- Help footer ----
