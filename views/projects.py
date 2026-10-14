@@ -12,7 +12,7 @@ import pandas as pd
 import streamlit as st
 
 from utils.db import run_query, execute_write
-
+from utils.audit import log_create, log_update, log_delete, log_import
 
 # =====================================================
 # HELPERS
@@ -560,6 +560,35 @@ def _render_add_project(subcounties, wards, departments):
                     },
                 )
                 if ok:
+                    # Fetch the new record ID and log
+                    try:
+                        new_id_df = run_query(
+                            "SELECT id FROM projects WHERE project_name = :n ORDER BY id DESC LIMIT 1",
+                            {"n": project_name.strip()}, ttl=0,
+                        )
+                        new_id = int(new_id_df['id'].iloc[0]) if not new_id_df.empty else None
+                    except Exception:
+                        new_id = None
+                
+                    log_create(
+                        table_name="projects",
+                        record_id=new_id,
+                        record_label=project_name.strip(),
+                        new_values={
+                            "project_name": project_name.strip(),
+                            "subcounty_id": subcounty_id,
+                            "ward_id": ward_id,
+                            "department_id": department_id,
+                            "project_status": project_status,
+                            "remarks": remarks.strip() or None,
+                            "commencement_date": commencement_date,
+                            "expected_completion_date": expected_completion_date,
+                            "total_funding": total_funding,
+                            "total_expenditure": total_expenditure,
+                            "percentage_completion": float(percentage_completion),
+                        },
+                    )
+                
                     st.success("✅ Project saved successfully.")
                     st.cache_data.clear()
                     st.rerun()
@@ -1217,14 +1246,33 @@ def _render_delete_form(projects_df):
         key="delete_confirm",
     )
 
-    if st.button(
-        "Delete Project", type="primary",
-        disabled=not confirm, use_container_width=True,
-    ):
-        ok, msg = execute_write(
-            "DELETE FROM projects WHERE id = :id", {"id": del_id}
-        )
+    if st.button("Delete Project", type="primary", disabled=not confirm, use_container_width=True):
+        # Fetch the record before deleting
+        try:
+            before_df = run_query(
+                """
+                SELECT id, project_name, subcounty_id, ward_id, department_id,
+                       project_status, remarks, commencement_date,
+                       expected_completion_date, total_funding,
+                       total_expenditure, percentage_completion
+                FROM projects WHERE id = :id
+                """,
+                {"id": del_id}, ttl=0,
+            )
+            old_snapshot = before_df.iloc[0].to_dict() if not before_df.empty else None
+            record_label = old_snapshot.get("project_name") if old_snapshot else None
+        except Exception:
+            old_snapshot = None
+            record_label = None
+    
+        ok, msg = execute_write("DELETE FROM projects WHERE id = :id", {"id": del_id})
         if ok:
+            log_delete(
+                table_name="projects",
+                record_id=del_id,
+                record_label=record_label,
+                old_values=old_snapshot,
+            )
             st.success(f"✅ Project #{del_id} deleted.")
             st.cache_data.clear()
             st.rerun()
