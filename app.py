@@ -282,9 +282,10 @@ with st.sidebar:
             </div>
         """, unsafe_allow_html=True)
 
-        if st.button("🚪   Sign Out",
-                     key="nav_signout",
-                     use_container_width=True):
+        if st.button("🚪   Sign Out", key="nav_signout", use_container_width=True):
+            from utils.audit import log_logout
+            user = st.session_state.get("user") or {}
+            log_logout(username=user.get("username", "unknown"), user_id=user.get("id"))
             st.session_state.user = None
             st.session_state.current_page = "Dashboard"
             st.rerun()
